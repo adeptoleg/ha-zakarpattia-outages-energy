@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zakarpattia outage schedule",
+        "description": "Select the subqueue for your address in Mukachevo or elsewhere in Zakarpattia.",
+        "data": {
+          "queue": "Outage subqueue",
+          "grid_sensor": "Grid power binary sensor (optional)",
+          "invert_grid": "Invert the sensor (On means grid power is absent)"
+        }
+      },
+      "reconfigure": {
+        "title": "Grid power measurement",
+        "data": {
+          "grid_sensor": "Grid power binary sensor (optional)",
+          "invert_grid": "Invert the sensor (On means grid power is absent)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This subqueue is already configured.",
+      "reconfigure_successful": "Grid power measurement updated."
+    }
+  },
+  "entity": {
+    "calendar": {
+      "schedule": {
+        "name": "Outage schedule {queue}"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Schedule status {queue}",
+        "state": {
+          "unpublished": "Schedule unavailable for today",
+          "outage_scheduled": "Outage scheduled",
+          "no_outage_scheduled": "No outage scheduled now"
+        }
+      },
+      "next_outage": {
+        "name": "Next scheduled outage {queue}"
+      }
+    },
+    "binary_sensor": {
+      "grid_power": {
+        "name": "Grid power {queue}"
+      }
+    }
+  }
+}
