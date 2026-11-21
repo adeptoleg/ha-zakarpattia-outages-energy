@@ -20,6 +20,7 @@ const labels = {
     unknown: "Графік не опубліковано",
     offline: "Дані графіка недоступні",
     clock: "Зараз",
+    jumpToNow: "Перейти до поточного часу",
     untilRestoration: "До відновлення за графіком",
     untilOutage: "До відключення за графіком",
   },
@@ -33,13 +34,14 @@ const labels = {
     unknown: "Schedule not published",
     offline: "Schedule data unavailable",
     clock: "Now",
+    jumpToNow: "Go to the current time",
     untilRestoration: "Until scheduled restoration",
     untilOutage: "Until scheduled outage",
   },
 };
 
 const styles = `
-  ha-card { overflow: hidden; color: var(--primary-text-color); }
+  ha-card { --queue-width: 82px; overflow: hidden; color: var(--primary-text-color); }
   .heading { padding: 18px 16px 10px; }
   h2 { margin: 0; font-size: 1.2rem; font-weight: 600; line-height: 1.35; }
   .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
@@ -56,18 +58,18 @@ const styles = `
     background: color-mix(in srgb, var(--primary-color, #1682aa) 16%, transparent);
     font-weight: 600;
   }
-  .scroll { overflow: auto; padding: 0 16px; }
+  .scroll { overflow-x: auto; }
   .timeline { position: relative; min-width: 850px; }
   table { border-spacing: 0; table-layout: fixed; width: 100%; }
-  .time-scale { pointer-events: none; position: absolute; inset: 0 0 0 82px; }
-  .now-line { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-1px);
+  .time-scale { pointer-events: none; position: absolute; inset: 0 0 0 var(--queue-width); z-index: 1; }
+  .now-line { position: absolute; top: 0; bottom: 0; width: 3px; transform: translateX(-50%);
     background: #d51b32; box-shadow: 0 0 0 1px white; }
   [hidden] { display: none; }
   th { font-size: 12px; font-variant-numeric: tabular-nums; }
   th, td { border-bottom: 1px solid var(--divider-color, #8887); box-sizing: border-box; }
   th[scope="row"], .queue {
-    width: 82px; padding: 0 8px; text-align: left; position: sticky; left: 0;
-    background: var(--ha-card-background, var(--card-background-color, Canvas)); z-index: 1;
+    width: var(--queue-width); padding: 0 8px; text-align: left; position: sticky; left: 0;
+    background: var(--ha-card-background, var(--card-background-color, Canvas)); z-index: 2;
   }
   th[scope="colgroup"] { border-left: 1px solid var(--divider-color, #8887); height: 26px; }
   td { height: 24px; }
@@ -103,12 +105,14 @@ class ZakarpattiaOutagesCard extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this._dayIndex = 0;
     this.shadowRoot.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-day]");
-      if (button) {
-        this._dayIndex = Number(button.dataset.day);
-        this._render();
-        this.shadowRoot.querySelector(`button[data-day="${this._dayIndex}"]`).focus();
-      }
+      const button = event.target.closest("button[data-day], button[data-now]");
+      if (!button) return;
+      const jumpToNow = button.hasAttribute("data-now");
+      this._dayIndex = jumpToNow ? 0 : Number(button.dataset.day);
+      if (this._dayIndex === 0) this._centeredDate = undefined;
+      this._render();
+      const selector = jumpToNow ? "[data-now]" : `[data-day="${this._dayIndex}"]`;
+      this.shadowRoot.querySelector(selector).focus({ preventScroll: true });
     });
   }
 
@@ -193,7 +197,10 @@ class ZakarpattiaOutagesCard extends HTMLElement {
         <div class="heading"><h2>${text.title}${selected ? ` · ${selected}` : ""}</h2></div>
         <div class="controls">
           <div class="days">${dayButtons}</div>
-          <div class="clock"><span class="current-time"></span><span class="countdown" hidden></span></div>
+          <div class="clock">
+            <button type="button" class="current-time" data-now title="${text.jumpToNow}"></button>
+            <span class="countdown" hidden></span>
+          </div>
         </div>
         ${notice ? `<p class="notice" role="status">${notice}</p>` : ""}
         <div class="scroll" tabindex="0" aria-label="${text.title} ${localDate}">
@@ -222,6 +229,9 @@ class ZakarpattiaOutagesCard extends HTMLElement {
     const line = root.querySelector(".now-line");
     line.hidden = date !== today;
     line.style.left = `${minute / 1440 * 100}%`;
+    if (!line.hidden && this._centeredDate !== today && this._centerCurrentTime(line)) {
+      this._centeredDate = today;
+    }
 
     const countdown = root.querySelector(".countdown");
     const intervals = state?.attributes.schedule?.[today];
@@ -248,6 +258,17 @@ class ZakarpattiaOutagesCard extends HTMLElement {
       : duration.format(left);
     countdown.textContent = `${active ? text.untilRestoration : text.untilOutage} ${formatted}`;
     countdown.hidden = false;
+  }
+
+  _centerCurrentTime(line) {
+    const scroll = this.shadowRoot.querySelector(".scroll");
+    if (!scroll.clientWidth) return false;
+    const queueWidth = this.shadowRoot.querySelector("th.queue").offsetWidth;
+    const marker = line.getBoundingClientRect();
+    const scrollLeft = scroll.getBoundingClientRect().left;
+    const center = (scroll.clientWidth + queueWidth) / 2;
+    scroll.scrollLeft += marker.left + marker.width / 2 - scrollLeft - center;
+    return true;
   }
 
   _cells(row, text) {
