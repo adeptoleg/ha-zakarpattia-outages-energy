@@ -4,6 +4,8 @@
 
 ## Встановлення
 
+Мінімальна версія Home Assistant Core — 2024.11.0.
+
 1. У HACS відкрийте меню з трьома крапками, виберіть **Custom repositories** і додайте `https://github.com/adeptoleg/ha-zakarpattia-outages-energy` з типом **Integration**.
 2. Знайдіть **Zakarpattia Outages** у HACS, завантажте інтеграцію та перезапустіть Home Assistant.
 3. У **Налаштування → Пристрої та служби → Додати інтеграцію** знайдіть **Zakarpattia Outages**. Виберіть підчергу від `1.1` до `6.2`, яку Закарпаттяобленерго призначило вашій адресі.
@@ -86,7 +88,7 @@ triggers:
 - [Графіки та перевірка підчерги на сайті Закарпаттяобленерго](https://zakarpat.energy/customers/break-in-electricity-supply/schedule/)
 - [Офіційний канал Закарпаттяобленерго](https://t.me/s/zakarpatenergyofficial)
 
-Перевірена версія платформи — Home Assistant Core 2026.11.0.
+Перевірено на Home Assistant Core 2024.11.0 і 2026.11.0.
 
 ## Ліцензія
 
