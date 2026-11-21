@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import ScheduleEntry
 from .const import KYIV, SOURCE_URL
 from .entity import ScheduleEntity
 from .schedule import ONE_DAY
+from .solar import daylight
 
 
 async def async_setup_entry(
@@ -36,6 +37,21 @@ class ScheduleStatus(ScheduleEntity, SensorEntity):
         "no_outage_scheduled",
     ]
 
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.coordinator.features.plan = self.current_intervals
+        self.coordinator.features.async_check_advance(datetime.now(UTC))
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        super()._handle_coordinator_update()
+        self.coordinator.features.async_check_advance(datetime.now(UTC))
+
+    @callback
+    def _async_tick(self, now: datetime) -> None:
+        super()._async_tick(now)
+        self.coordinator.features.async_check_advance(now)
+
     @property
     def native_value(self) -> str:
         now = datetime.now(UTC)
@@ -50,6 +66,9 @@ class ScheduleStatus(ScheduleEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         now = datetime.now(UTC)
         today = now.astimezone(KYIV).date()
+        location = self.coordinator.features.location or {}
+        latitude = location.get("latitude", self.hass.config.latitude)
+        longitude = location.get("longitude", self.hass.config.longitude)
         published = (self.coordinator.data or {}) if self.available else {}
         return {
             "all_queues": {
@@ -57,6 +76,7 @@ class ScheduleStatus(ScheduleEntity, SensorEntity):
                 for day in (today, today + ONE_DAY)
             },
             "queue": self.coordinator.queue,
+            "location_label": self.coordinator.features.label,
             "next_outage": (
                 outage.isoformat() if (outage := self.scheduled_outage(now)) else None
             ),
@@ -66,6 +86,10 @@ class ScheduleStatus(ScheduleEntity, SensorEntity):
                 else None
             ),
             "source": SOURCE_URL,
+            "daylight": {
+                day.isoformat(): daylight(day, latitude, longitude)
+                for day in (today, today + ONE_DAY)
+            },
             "schedule": {
                 day.isoformat(): (
                     None

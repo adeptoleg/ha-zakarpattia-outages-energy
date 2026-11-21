@@ -1,7 +1,8 @@
 """Choose a Zakarpattia subqueue and optionally link a grid sensor."""
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
+from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
@@ -11,6 +12,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import CONF_GRID_SENSOR, CONF_INVERT_GRID, CONF_QUEUE, DOMAIN, QUEUES
+from .options import OutageOptionsFlow
 
 _GRID_FIELDS = {
     vol.Optional(CONF_GRID_SENSOR): EntitySelector(
@@ -24,6 +26,11 @@ class OutageConfigFlow(ConfigFlow, domain=DOMAIN):
     """Create one config entry per subqueue."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OutageOptionsFlow:
+        return OutageOptionsFlow()
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
         if user_input is not None:

@@ -50,5 +50,22 @@
         "name": "Grid power {queue}"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Profile and notifications",
+        "description": "The name and location are optional. The Home Assistant location is the default. Measured notifications require a grid sensor.",
+        "data": {
+          "location_label": "Name, e.g. Home",
+          "schedule_location": "Location for the daylight band",
+          "notify_target": "Notification recipient",
+          "notify_lead": "Warn 15, 30 or 60 minutes ahead",
+          "notify_changes": "Schedule changed",
+          "notify_grid_down": "Actual grid loss",
+          "notify_grid_up": "Actual grid restoration"
+        }
+      }
+    }
   }
 }

@@ -5,12 +5,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.const import STATE_OFF, STATE_ON
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from . import ScheduleEntry
 from .const import CONF_GRID_SENSOR, CONF_INVERT_GRID, CONF_QUEUE
+from .features import EntryFeatures
 
 
 async def async_setup_entry(
@@ -20,6 +21,7 @@ async def async_setup_entry(
         async_add_entities(
             [
                 GridPower(
+                    entry.runtime_data.features,
                     entry.data[CONF_QUEUE],
                     source,
                     entry.data.get(CONF_INVERT_GRID, False),
@@ -35,15 +37,25 @@ class GridPower(BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.POWER
     _attr_translation_key = "grid_power"
 
-    def __init__(self, queue: str, source: str, inverted: bool) -> None:
+    def __init__(
+        self, features: EntryFeatures, queue: str, source: str, inverted: bool
+    ) -> None:
         self._attr_extra_state_attributes = {
             "queue": queue,
             "grid_power_source": source,
         }
+        self._features = features
         self._source = source
         self._inverted = inverted
         self._attr_unique_id = f"{queue}_grid_power"
         self._attr_translation_placeholders = {"queue": queue}
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            **self._attr_extra_state_attributes,
+            "actual_outages": self._features.history,
+        }
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -52,16 +64,17 @@ class GridPower(BinarySensorEntity):
                 self.hass, self._source, self._async_grid_changed
             )
         )
-        self._async_update_grid_state()
+        self._async_update_grid_state(self.hass.states.get(self._source))
 
     @callback
-    def _async_grid_changed(self, _event) -> None:
-        self._async_update_grid_state()
+    def _async_grid_changed(self, event: Event) -> None:
+        previous = self.is_on
+        self._async_update_grid_state(event.data["new_state"])
+        self._features.async_grid_changed(previous, self.is_on, event.time_fired)
         self.async_write_ha_state()
 
     @callback
-    def _async_update_grid_state(self) -> None:
-        source = self.hass.states.get(self._source)
+    def _async_update_grid_state(self, source: State | None) -> None:
         self._attr_available = source is not None and source.state in (
             STATE_ON,
             STATE_OFF,

@@ -19,6 +19,8 @@ const labels = {
     clear: "Відключення не заплановано",
     unknown: "Графік не опубліковано",
     offline: "Дані графіка недоступні",
+    night: "Ніч", twilight: "Сутінки", day: "День",
+    sunlight: "Час доби за вибраною локацією",
     clock: "Зараз",
     jumpToNow: "Перейти до поточного часу",
     untilRestoration: "До відновлення за графіком",
@@ -33,6 +35,8 @@ const labels = {
     clear: "No scheduled outage",
     unknown: "Schedule not published",
     offline: "Schedule data unavailable",
+    night: "Night", twilight: "Twilight", day: "Day",
+    sunlight: "Daylight at the selected location",
     clock: "Now",
     jumpToNow: "Go to the current time",
     untilRestoration: "Until scheduled restoration",
@@ -62,6 +66,11 @@ const styles = `
   .timeline { position: relative; min-width: 850px; }
   table { border-spacing: 0; table-layout: fixed; width: 100%; }
   .time-scale { pointer-events: none; position: absolute; inset: 0 0 0 var(--queue-width); z-index: 1; }
+  .solar-band { height: 8px; position: relative; margin-left: var(--queue-width); }
+  .solar-band span { position: absolute; top: 0; bottom: 0; }
+  .night { background: #314775; }
+  .twilight { background: #a26a8f; }
+  .day { background: #efcd74; }
   .now-line { position: absolute; top: 0; bottom: 0; width: 3px; transform: translateX(-50%);
     background: #d51b32; box-shadow: 0 0 0 1px white; }
   [hidden] { display: none; }
@@ -165,8 +174,12 @@ class ZakarpattiaOutagesCard extends HTMLElement {
     const date = days[this._dayIndex];
     const rows = schedules[date] ?? {};
     const published = queues.some((queue) => confirmedRow.test(rows[queue]));
+    const solar = (state?.attributes.daylight?.[date] ?? []).filter(({ start, end, phase }) =>
+      Number.isInteger(start) && Number.isInteger(end) && 0 <= start && start < end && end <= 1440 &&
+      ["night", "twilight", "day"].includes(phase)
+    );
     const offline = !state || state.state === "unavailable";
-    const key = JSON.stringify([lang, selected, days, rows, offline, this._dayIndex]);
+    const key = JSON.stringify([lang, selected, days, rows, solar, offline, this._dayIndex]);
     this._clockContext = { lang, text, state, date };
     if (key === this._rendered) {
       this._updateClock();
@@ -187,7 +200,7 @@ class ZakarpattiaOutagesCard extends HTMLElement {
       return `<tr${highlighted}><th scope="row">${queue}</th>${cells}</tr>`;
     }).join("");
     const notice = offline ? text.offline : published ? "" : text.unknown;
-    const legend = ["outage", "clear", "unknown"].map((kind) =>
+    const legend = ["outage", "clear", "unknown", ...(solar.length ? ["day", "twilight", "night"] : [])].map((kind) =>
       `<li><span class="swatch ${kind}" aria-hidden="true"></span>${text[kind]}</li>`
     ).join("");
 
@@ -205,6 +218,9 @@ class ZakarpattiaOutagesCard extends HTMLElement {
         ${notice ? `<p class="notice" role="status">${notice}</p>` : ""}
         <div class="scroll" tabindex="0" aria-label="${text.title} ${localDate}">
           <div class="timeline">
+            ${solar.length ? `<div class="solar-band" aria-label="${text.sunlight}">${solar.map(({ start, end, phase }) =>
+              `<span class="${phase}" style="left:${start / 14.4}%;width:${(end - start) / 14.4}%" title="${text[phase]}"></span>`
+            ).join("")}</div>` : ""}
             <table aria-label="${text.title} ${localDate}">
               <thead><tr><th class="queue" scope="col">${text.queue}</th>${heading}</tr></thead>
               <tbody>${body}</tbody>
@@ -290,6 +306,49 @@ if (!customElements.get(cardType)) {
   });
 }
 
+const historyText = {
+  uk: { title: "Фактичні відключення", empty: "Зафіксованих інтервалів поки немає.",
+    actual: "За датчиком", planned: "За графіком", unmatched: "Немає зіставлення" },
+  en: { title: "Measured outages", empty: "No measured intervals yet.",
+    actual: "Measured", planned: "Scheduled", unmatched: "No matching interval" },
+};
+
+function renderHistory(container, grid, language) {
+  container.hidden = !grid;
+  if (!grid) return;
+  const text = historyText[language];
+  const records = grid.attributes.actual_outages ?? [];
+  container.querySelector("summary").textContent = `${text.title} · ${records.length}`;
+  const content = container.querySelector(".history-content");
+  const key = JSON.stringify([language, records]);
+  if (content.dataset.key === key) return;
+  content.dataset.key = key;
+  content.replaceChildren();
+  if (!records.length) {
+    content.textContent = text.empty;
+    return;
+  }
+  const format = new Intl.DateTimeFormat(language, {
+    timeZone: "Europe/Kyiv", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  const time = (value) => Number.isFinite(Date.parse(value)) ? format.format(new Date(value)) : null;
+  for (const row of records.slice().reverse()) {
+    const start = time(row.start), end = time(row.end);
+    if (!start || !end) continue;
+    const item = document.createElement("p");
+    const label = document.createElement("strong");
+    const plan = document.createElement("span");
+    label.textContent = `${text.actual} ${start} – ${end}`;
+    const plannedStart = time(row.planned_start), plannedEnd = time(row.planned_end);
+    plan.textContent = plannedStart && plannedEnd
+      ? `${text.planned} ${plannedStart} – ${plannedEnd}`
+      : text.unmatched;
+    item.append(label, plan);
+    content.append(item);
+  }
+}
+
 const panelType = "zakarpattia-outages-panel";
 
 const panelText = {
@@ -351,16 +410,26 @@ class ZakarpattiaOutagesPanel extends HTMLElement {
           border-radius: var(--ha-card-border-radius, 12px); }
         dt { color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
         dd { margin: 0; font-size: 16px; font-weight: 600; }
+        .site-label { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+        details { margin-top: 16px; border: 1px solid var(--divider-color, #777);
+          border-radius: 12px; padding: 12px; }
+        summary { cursor: pointer; font-weight: 600; }
+        .history-content { margin-top: 12px; max-height: 340px; overflow: auto; }
+        .history-content p { display: grid; gap: 4px; margin: 0; padding: 8px 2px;
+          border-bottom: 1px solid var(--divider-color, #777); }
+        .history-content span { color: var(--secondary-text-color); }
         [hidden] { display: none; }
       </style>
       <header><ha-menu-button></ha-menu-button><h1></h1><a href="/config/integrations/integration/zakarpattia_outages"></a></header>
       <main>
+        <p class="site-label" hidden></p>
         <label hidden><span></span><select></select></label>
         <dl>
           <div><dt></dt><dd></dd></div><div><dt></dt><dd></dd></div>
           <div><dt></dt><dd></dd></div><div><dt></dt><dd></dd></div>
         </dl>
         <zakarpattia-outages-card></zakarpattia-outages-card>
+        <details hidden><summary></summary><div class="history-content"></div></details>
       </main>`;
     this._select = root.querySelector("select");
     this._card = root.querySelector(cardType);
@@ -397,14 +466,17 @@ class ZakarpattiaOutagesPanel extends HTMLElement {
     settings.textContent = text.settings;
     settings.hidden = !user?.is_admin;
     root.querySelector("label").hidden = configured.length <= 1;
+    const label = root.querySelector(".site-label");
+    label.textContent = state?.attributes.location_label || "";
+    label.hidden = configured.length > 1 || !label.textContent;
     root.querySelector("label span").textContent = labels[lang].queue;
 
-    const optionsKey = JSON.stringify(configured.map(([id, item]) => [id, item.attributes.queue]));
+    const optionsKey = JSON.stringify(configured.map(([id, item]) => [id, item.attributes.queue, item.attributes.location_label]));
     if (optionsKey !== this._optionsKey) {
       this._select.replaceChildren(...configured.map(([id, item]) => {
         const option = document.createElement("option");
         option.value = id;
-        option.textContent = item.attributes.queue;
+        option.textContent = [item.attributes.location_label, item.attributes.queue].filter(Boolean).join(" · ");
         return option;
       }));
       this._optionsKey = optionsKey;
@@ -434,6 +506,7 @@ class ZakarpattiaOutagesPanel extends HTMLElement {
       item.querySelector("dd").textContent = values[i][1];
     });
 
+    renderHistory(root.querySelector("details"), grid, lang);
     this._card.setConfig({ entity });
     this._card.hass = this._hass;
   }

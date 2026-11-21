@@ -13,7 +13,7 @@ from .schedule import ONE_DAY, Outage, day_intervals, merge_intervals
 
 
 class ScheduleEntity(CoordinatorEntity[ScheduleCoordinator]):
-    """Refresh the state at half-hour boundaries between source polls."""
+    """Refresh the state at minute boundaries between source polls."""
 
     _attr_has_entity_name = True
 
@@ -26,9 +26,7 @@ class ScheduleEntity(CoordinatorEntity[ScheduleCoordinator]):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_track_utc_time_change(
-                self.hass, self._async_tick, minute=(0, 30), second=0
-            )
+            async_track_utc_time_change(self.hass, self._async_tick, second=0)
         )
 
     @callback
