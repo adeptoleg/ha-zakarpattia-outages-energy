@@ -1,6 +1,12 @@
 # Zakarpattia Outages для Home Assistant
 
+Power outage schedules for Zakarpattia in Home Assistant.
+
 Графік погодинних відключень електроенергії для Мукачева та всього Закарпаття. Картка показує всі 12 підчерг на сьогодні й завтра та виділяє вашу. Кожна клітинка відповідає 30 хвилинам.
+
+![Панель графіків у Home Assistant із виділеною підчергою та рискою поточного часу](docs/schedule-panel.png)
+
+Для вибору області та оператора є [Ukrainian Outages](https://github.com/adeptoleg/ha-uktainian-outages).
 
 ## Встановлення
 
