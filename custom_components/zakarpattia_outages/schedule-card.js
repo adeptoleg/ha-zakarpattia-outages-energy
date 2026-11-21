@@ -4,6 +4,10 @@ const hours = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "
 const confirmedRow = /^[01]{48}$/;
 const displayDate = (day) => day ? day.split("-").reverse().join(".") : "";
 const isoDay = /^\d{4}-\d{2}-\d{2}$/;
+const kyivClock = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
 
 const labels = {
   uk: {
@@ -15,6 +19,9 @@ const labels = {
     clear: "Відключення не заплановано",
     unknown: "Графік не опубліковано",
     offline: "Дані графіка недоступні",
+    clock: "Зараз",
+    untilRestoration: "До відновлення за графіком",
+    untilOutage: "До відключення за графіком",
   },
   en: {
     title: "Zakarpattia outage schedule",
@@ -25,6 +32,9 @@ const labels = {
     clear: "No scheduled outage",
     unknown: "Schedule not published",
     offline: "Schedule data unavailable",
+    clock: "Now",
+    untilRestoration: "Until scheduled restoration",
+    untilOutage: "Until scheduled outage",
   },
 };
 
@@ -32,7 +42,11 @@ const styles = `
   ha-card { overflow: hidden; color: var(--primary-text-color); }
   .heading { padding: 18px 16px 10px; }
   h2 { margin: 0; font-size: 1.2rem; font-weight: 600; line-height: 1.35; }
-  .days { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 16px 12px; }
+  .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+    padding: 4px 16px 12px; }
+  .days, .clock { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .clock { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .countdown { color: var(--primary-text-color); font-weight: 600; }
   button {
     color: inherit; background: transparent; padding: 7px 12px; cursor: pointer;
     border: 1px solid var(--divider-color, #777); border-radius: 999px; font: inherit;
@@ -43,7 +57,12 @@ const styles = `
     font-weight: 600;
   }
   .scroll { overflow: auto; padding: 0 16px; }
-  table { border-spacing: 0; table-layout: fixed; width: 100%; min-width: 850px; }
+  .timeline { position: relative; min-width: 850px; }
+  table { border-spacing: 0; table-layout: fixed; width: 100%; }
+  .time-scale { pointer-events: none; position: absolute; inset: 0 0 0 82px; }
+  .now-line { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-1px);
+    background: #d51b32; box-shadow: 0 0 0 1px white; }
+  [hidden] { display: none; }
   th { font-size: 12px; font-variant-numeric: tabular-nums; }
   th, td { border-bottom: 1px solid var(--divider-color, #8887); box-sizing: border-box; }
   th[scope="row"], .queue {
@@ -93,6 +112,22 @@ class ZakarpattiaOutagesCard extends HTMLElement {
     });
   }
 
+  connectedCallback() {
+    this._updateClock();
+    this._scheduleClock();
+  }
+
+  disconnectedCallback() {
+    clearTimeout(this._clockTimer);
+  }
+
+  _scheduleClock() {
+    this._clockTimer = setTimeout(() => {
+      this._updateClock();
+      this._scheduleClock();
+    }, 60_000 - Date.now() % 60_000);
+  }
+
   setConfig(config) {
     if (config.entity && typeof config.entity !== "string") {
       throw new Error("entity must be a sensor entity ID");
@@ -128,7 +163,11 @@ class ZakarpattiaOutagesCard extends HTMLElement {
     const published = queues.some((queue) => confirmedRow.test(rows[queue]));
     const offline = !state || state.state === "unavailable";
     const key = JSON.stringify([lang, selected, days, rows, offline, this._dayIndex]);
-    if (key === this._rendered) return;
+    this._clockContext = { lang, text, state, date };
+    if (key === this._rendered) {
+      this._updateClock();
+      return;
+    }
     this._rendered = key;
     const scrollLeft = this.shadowRoot.querySelector(".scroll")?.scrollLeft ?? 0;
     const localDate = displayDate(date);
@@ -152,17 +191,63 @@ class ZakarpattiaOutagesCard extends HTMLElement {
       <style>${styles}</style>
       <ha-card>
         <div class="heading"><h2>${text.title}${selected ? ` · ${selected}` : ""}</h2></div>
-        <div class="days">${dayButtons}</div>
+        <div class="controls">
+          <div class="days">${dayButtons}</div>
+          <div class="clock"><span class="current-time"></span><span class="countdown" hidden></span></div>
+        </div>
         ${notice ? `<p class="notice" role="status">${notice}</p>` : ""}
         <div class="scroll" tabindex="0" aria-label="${text.title} ${localDate}">
-          <table aria-label="${text.title} ${localDate}">
-            <thead><tr><th class="queue" scope="col">${text.queue}</th>${heading}</tr></thead>
-            <tbody>${body}</tbody>
-          </table>
+          <div class="timeline">
+            <table aria-label="${text.title} ${localDate}">
+              <thead><tr><th class="queue" scope="col">${text.queue}</th>${heading}</tr></thead>
+              <tbody>${body}</tbody>
+            </table>
+            <div class="time-scale" aria-hidden="true"><div class="now-line" hidden></div></div>
+          </div>
         </div>
         <ul class="legend">${legend}</ul>
       </ha-card>`;
     this.shadowRoot.querySelector(".scroll").scrollLeft = scrollLeft;
+    this._updateClock();
+  }
+
+  _updateClock(now = Date.now()) {
+    if (!this._clockContext) return;
+    const { lang, text, state, date } = this._clockContext;
+    const parts = Object.fromEntries(kyivClock.formatToParts(now).map(({ type, value }) => [type, value]));
+    const today = `${parts.year}-${parts.month}-${parts.day}`;
+    const minute = Number(parts.hour) * 60 + Number(parts.minute);
+    const root = this.shadowRoot;
+    root.querySelector(".current-time").textContent = `${text.clock} ${parts.hour}:${parts.minute}`;
+    const line = root.querySelector(".now-line");
+    line.hidden = date !== today;
+    line.style.left = `${minute / 1440 * 100}%`;
+
+    const countdown = root.querySelector(".countdown");
+    const intervals = state?.attributes.schedule?.[today];
+    if (!Array.isArray(intervals) || state.state === "unavailable") {
+      countdown.hidden = true;
+      return;
+    }
+
+    const active = intervals.some(({ start, end }) => Date.parse(start) <= now && now < Date.parse(end));
+    const target = Date.parse(active ? state.attributes.next_restoration : state.attributes.next_outage);
+    if (!Number.isFinite(target) || target <= now) {
+      countdown.hidden = true;
+      return;
+    }
+
+    const left = Math.ceil((target - now) / 60_000);
+    const duration = new Intl.NumberFormat(lang, {
+      style: "unit", unit: "minute", unitDisplay: "short",
+    });
+    const hour = new Intl.NumberFormat(lang, {
+      style: "unit", unit: "hour", unitDisplay: "short",
+    });
+    const formatted = left >= 60 ? `${hour.format(Math.floor(left / 60))} ${duration.format(left % 60)}`
+      : duration.format(left);
+    countdown.textContent = `${active ? text.untilRestoration : text.untilOutage} ${formatted}`;
+    countdown.hidden = false;
   }
 
   _cells(row, text) {

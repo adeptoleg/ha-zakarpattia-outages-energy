@@ -1,0 +1,32 @@
+name: Publish integration release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/zakarpattia_outages/manifest.json
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-integration-release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Publish the manifest version if it is new
+        shell: bash
+        run: |
+          manifest=custom_components/zakarpattia_outages/manifest.json
+          version=$(gh api "repos/$GITHUB_REPOSITORY/contents/$manifest?ref=$GITHUB_SHA" --jq .content |
+            base64 --decode | jq -er .version)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if ! gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$version" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "$version" --generate-notes
+          fi
