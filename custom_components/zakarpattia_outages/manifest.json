@@ -3,10 +3,10 @@
   "name": "Zakarpattia Outages",
   "codeowners": ["@adeptoleg"],
   "config_flow": true,
-  "dependencies": ["frontend", "network"],
+  "dependencies": ["frontend", "network", "panel_custom"],
   "documentation": "https://github.com/adeptoleg/ha-zakarpattia-outages-energy",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/adeptoleg/ha-zakarpattia-outages-energy/issues",
-  "version": "0.1.1"
+  "version": "0.2.0"
 }

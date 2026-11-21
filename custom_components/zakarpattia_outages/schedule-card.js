@@ -183,3 +183,156 @@ if (!customElements.get(cardType)) {
     description: "Regional outage schedule with your subqueue highlighted.",
   });
 }
+
+const panelType = "zakarpattia-outages-panel";
+
+const panelText = {
+  uk: {
+    title: "Графік світла",
+    settings: "Налаштування",
+    schedule: "Зараз за графіком",
+    grid: "Фактичний стан мережі",
+    next: "Наступне відключення",
+    restore: "Відновлення за графіком",
+    outage_scheduled: "Відключення",
+    no_outage_scheduled: "Без відключення",
+    unpublished: "Графік не опубліковано",
+    on: "Мережа є",
+    off: "Мережі немає",
+    missing: "Датчик не налаштовано",
+    unavailable: "Недоступно",
+    noTime: "Час невідомий",
+  },
+  en: {
+    title: "Outage schedule",
+    settings: "Settings",
+    schedule: "Current schedule",
+    grid: "Actual grid status",
+    next: "Next scheduled outage",
+    restore: "Scheduled restoration",
+    outage_scheduled: "Outage",
+    no_outage_scheduled: "No outage",
+    unpublished: "Schedule not published",
+    on: "Grid available",
+    off: "Grid unavailable",
+    missing: "Sensor not configured",
+    unavailable: "Unavailable",
+    noTime: "Time unknown",
+  },
+};
+
+class ZakarpattiaOutagesPanel extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host { display: block; min-height: 100%; color: var(--primary-text-color); }
+        header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+          min-height: 40px; background: var(--app-header-background-color);
+          color: var(--app-header-text-color); }
+        h1 { font-size: 20px; font-weight: 500; margin: 0; flex: 1; }
+        header a { color: inherit; font-weight: 600; }
+        main { box-sizing: border-box; max-width: 1300px; margin: auto; padding: clamp(12px, 3vw, 32px); }
+        label { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        select { padding: 8px 12px; border-radius: 8px; font: inherit; color: inherit;
+          border: 1px solid var(--divider-color, #777);
+          background: var(--card-background-color, Canvas); }
+        dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+          gap: 10px; margin: 0 0 16px; }
+        dl div { background: var(--ha-card-background, var(--card-background-color));
+          padding: 12px; border: 1px solid var(--divider-color, #777);
+          border-radius: var(--ha-card-border-radius, 12px); }
+        dt { color: var(--secondary-text-color); font-size: 13px; margin-bottom: 4px; }
+        dd { margin: 0; font-size: 16px; font-weight: 600; }
+        [hidden] { display: none; }
+      </style>
+      <header><ha-menu-button></ha-menu-button><h1></h1><a href="/config/integrations/integration/zakarpattia_outages"></a></header>
+      <main>
+        <label hidden><span></span><select></select></label>
+        <dl>
+          <div><dt></dt><dd></dd></div><div><dt></dt><dd></dd></div>
+          <div><dt></dt><dd></dd></div><div><dt></dt><dd></dd></div>
+        </dl>
+        <zakarpattia-outages-card></zakarpattia-outages-card>
+      </main>`;
+    this._select = root.querySelector("select");
+    this._card = root.querySelector(cardType);
+    this._select.addEventListener("change", () => {
+      this._entity = this._select.value;
+      this._render();
+    });
+  }
+
+  set narrow(narrow) {
+    this.shadowRoot.querySelector("ha-menu-button").narrow = narrow;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    const { states, locale, language, user } = this._hass;
+    const lang = (locale?.language || language || "en").startsWith("uk") ? "uk" : "en";
+    const text = panelText[lang];
+    const configured = Object.entries(states)
+      .filter(([, { attributes }]) => queues.includes(attributes.queue) && attributes.all_queues)
+      .sort(([, a], [, b]) => a.attributes.queue.localeCompare(b.attributes.queue));
+    const selection = configured.find(([id]) => id === this._entity) || configured[0];
+    const [entity, state] = selection || [];
+    this._entity = entity;
+
+    const root = this.shadowRoot;
+    root.querySelector("ha-menu-button").hass = this._hass;
+    root.querySelector("h1").textContent = text.title;
+    const settings = root.querySelector("header a");
+    settings.textContent = text.settings;
+    settings.hidden = !user?.is_admin;
+    root.querySelector("label").hidden = configured.length <= 1;
+    root.querySelector("label span").textContent = labels[lang].queue;
+
+    const optionsKey = JSON.stringify(configured.map(([id, item]) => [id, item.attributes.queue]));
+    if (optionsKey !== this._optionsKey) {
+      this._select.replaceChildren(...configured.map(([id, item]) => {
+        const option = document.createElement("option");
+        option.value = id;
+        option.textContent = item.attributes.queue;
+        return option;
+      }));
+      this._optionsKey = optionsKey;
+    }
+    Array.from(this._select.options).forEach((option) => {
+      option.selected = option.value === entity;
+    });
+
+    const grid = state && Object.values(states).find(({ attributes }) =>
+      attributes.queue === state.attributes.queue && attributes.grid_power_source
+    );
+    const formatTime = new Intl.DateTimeFormat(lang, {
+      timeZone: "Europe/Kyiv", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    });
+    const timestamp = (value) => value && Number.isFinite(Date.parse(value))
+      ? formatTime.format(new Date(value))
+      : text.noTime;
+    const values = [
+      [text.schedule, text[state?.state] ?? text.unavailable],
+      [text.grid, grid ? (text[grid.state] ?? text.unavailable) : text.missing],
+      [text.next, timestamp(state?.attributes.next_outage)],
+      [text.restore, timestamp(state?.attributes.next_restoration)],
+    ];
+    root.querySelectorAll("dl div").forEach((item, i) => {
+      item.querySelector("dt").textContent = values[i][0];
+      item.querySelector("dd").textContent = values[i][1];
+    });
+
+    this._card.setConfig({ entity });
+    this._card.hass = this._hass;
+  }
+}
+
+if (!customElements.get(panelType)) {
+  customElements.define(panelType, ZakarpattiaOutagesPanel);
+}

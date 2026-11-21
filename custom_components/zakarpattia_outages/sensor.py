@@ -18,7 +18,11 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        [ScheduleStatus(coordinator, "status"), NextOutage(coordinator, "next_outage")]
+        [
+            ScheduleStatus(coordinator, "status"),
+            NextOutage(coordinator, "next_outage"),
+            NextRestoration(coordinator, "next_restoration"),
+        ]
     )
 
 
@@ -53,6 +57,14 @@ class ScheduleStatus(ScheduleEntity, SensorEntity):
                 for day in (today, today + ONE_DAY)
             },
             "queue": self.coordinator.queue,
+            "next_outage": (
+                outage.isoformat() if (outage := self.scheduled_outage(now)) else None
+            ),
+            "next_restoration": (
+                restoration.isoformat()
+                if (restoration := self.scheduled_restoration(now))
+                else None
+            ),
             "source": SOURCE_URL,
             "schedule": {
                 day.isoformat(): (
@@ -78,12 +90,14 @@ class NextOutage(ScheduleEntity, SensorEntity):
 
     @property
     def native_value(self) -> datetime | None:
-        now = datetime.now(UTC)
-        return next(
-            (
-                interval.start
-                for interval in self.current_intervals(now)
-                if now < interval.start
-            ),
-            None,
-        )
+        return self.scheduled_outage(datetime.now(UTC))
+
+
+class NextRestoration(ScheduleEntity, SensorEntity):
+    """Expose the first known end of a current or future outage."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.scheduled_restoration(datetime.now(UTC))

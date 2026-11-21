@@ -1,7 +1,7 @@
 """Common schedule entity behaviour."""
 
 from collections.abc import Iterator
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_utc_time_change
@@ -56,3 +56,27 @@ class ScheduleEntity(CoordinatorEntity[ScheduleCoordinator]):
             if day_intervals is not None
             for interval in day_intervals
         )
+
+    def scheduled_outage(self, now: datetime) -> datetime | None:
+        """Find the first future published outage start."""
+        return next(
+            (
+                interval.start
+                for interval in self.current_intervals(now)
+                if now < interval.start
+            ),
+            None,
+        )
+
+    def scheduled_restoration(self, now: datetime) -> datetime | None:
+        """Find the first known outage end, excluding an unpublished midnight boundary."""
+        for interval in self.current_intervals(now):
+            if now >= interval.end:
+                continue
+            end = interval.end.astimezone(KYIV)
+            if end.time() == time.min:
+                slots = (self.coordinator.data or {}).get(end.date(), {})
+                if self.coordinator.queue not in slots:
+                    return None
+            return interval.end
+        return None

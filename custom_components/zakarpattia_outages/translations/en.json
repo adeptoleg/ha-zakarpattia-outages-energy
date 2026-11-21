@@ -40,6 +40,9 @@
       },
       "next_outage": {
         "name": "Next scheduled outage {queue}"
+      },
+      "next_restoration": {
+        "name": "Next scheduled restoration {queue}"
       }
     },
     "binary_sensor": {

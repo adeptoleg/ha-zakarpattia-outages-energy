@@ -8,6 +8,7 @@ CONF_QUEUE = "queue"
 CONF_GRID_SENSOR = "grid_sensor"
 CONF_INVERT_GRID = "invert_grid"
 EVENT_SCHEDULE_CHANGED = f"{DOMAIN}_schedule_changed"
+PANEL_PATH = "zakarpattia-outages"
 CARD_URL = f"/{DOMAIN}/schedule-card.js"
 QUEUES = tuple(f"{queue}.{subqueue}" for queue in range(1, 7) for subqueue in (1, 2))
 

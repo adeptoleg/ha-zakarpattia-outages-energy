@@ -40,6 +40,9 @@
       },
       "next_outage": {
         "name": "Наступне відключення за графіком {queue}"
+      },
+      "next_restoration": {
+        "name": "Наступне відновлення за графіком {queue}"
       }
     },
     "binary_sensor": {

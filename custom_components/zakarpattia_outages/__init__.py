@@ -8,6 +8,7 @@ from pathlib import Path
 import aiohttp
 from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -21,6 +22,7 @@ from .const import (
     DOMAIN,
     EVENT_SCHEDULE_CHANGED,
     KYIV,
+    PANEL_PATH,
     SOURCE_URL,
     UPDATE_INTERVAL,
 )
@@ -101,6 +103,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         ]
     )
     frontend.add_extra_js_url(hass, CARD_URL)
+    hass.data[DOMAIN] = set()
     return True
 
 
@@ -110,9 +113,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ScheduleEntry) -> bool:
     await coordinator.async_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, _PLATFORMS)
+    active_entries = hass.data[DOMAIN]
+    if not active_entries:
+        await async_register_panel(
+            hass,
+            frontend_url_path=PANEL_PATH,
+            webcomponent_name="zakarpattia-outages-panel",
+            sidebar_title="Графік світла",
+            sidebar_icon="mdi:transmission-tower",
+            module_url=CARD_URL,
+            trust_external=True,
+        )
+    active_entries.add(entry.entry_id)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ScheduleEntry) -> bool:
     """Unload the integration's entities."""
-    return await hass.config_entries.async_unload_platforms(entry, _PLATFORMS)
+    if not await hass.config_entries.async_unload_platforms(entry, _PLATFORMS):
+        return False
+    active_entries = hass.data[DOMAIN]
+    active_entries.discard(entry.entry_id)
+    if not active_entries:
+        frontend.async_remove_panel(hass, PANEL_PATH)
+    return True

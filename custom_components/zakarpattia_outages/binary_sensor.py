@@ -36,6 +36,10 @@ class GridPower(BinarySensorEntity):
     _attr_translation_key = "grid_power"
 
     def __init__(self, queue: str, source: str, inverted: bool) -> None:
+        self._attr_extra_state_attributes = {
+            "queue": queue,
+            "grid_power_source": source,
+        }
         self._source = source
         self._inverted = inverted
         self._attr_unique_id = f"{queue}_grid_power"
